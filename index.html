@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FX Power & Safety Calculator</title>
+  <style>
+    body {
+      font-family: Arial;
+      padding: 20px;
+      background: #111;
+      color: #fff;
+    }
+
+    h1 { color: #00ffaa; }
+
+    .box {
+      background: #1e1e1e;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 10px;
+    }
+
+    input, select {
+      padding: 6px;
+      margin: 5px;
+    }
+
+    button {
+      padding: 6px 10px;
+      margin-left: 5px;
+      background: #00ffaa;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+      font-size: 12px;
+    }
+
+    .warning {
+      color: red;
+      font-weight: bold;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>FX Power & Safety Calculator</h1>
+
+<div class="box">
+  <h3>Add Equipment</h3>
+
+  <input type="text" id="name" placeholder="Equipment Name">
+
+  <select id="zone" onchange="toggleCustomZone()">
+    <option value="Stage">Stage</option>
+    <option value="Entrance">Entrance</option>
+    <option value="Booth">Booth</option>
+    <option value="Truss">Truss</option>
+    <option value="Others">Others</option>
+  </select>
+
+  <input type="text" id="customZone" placeholder="Enter custom zone" style="display:none;">
+
+  <select id="unit">
+    <option value="amp">Amp (A)</option>
+    <option value="watt">Watt (W)</option>
+  </select>
+
+  <input type="number" id="power" placeholder="Value">
+  <input type="number" id="qty" value="1" min="1">
+
+  <button onclick="addItem()">Add</button>
+</div>
+
+<div class="box">
+  <h3>Mode</h3>
+  <select id="mode" onchange="calculate()">
+    <option value="1">Normal</option>
+    <option value="1.5">Safety (1.5x)</option>
+    <option value="2">Extreme (2x)</option>
+  </select>
+</div>
+
+<div class="box">
+  <h3>Equipment List</h3>
+  <ul id="list"></ul>
+</div>
+
+<div class="box">
+  <h3>Zone Results</h3>
+  <div id="zoneResults"></div>
+</div>
+
+<div class="box">
+  <h3>Total Result</h3>
+  <p id="total"></p>
+  <p id="phase"></p>
+  <p id="warning" class="warning"></p>
+</div>
+
+<script>
+let items = [];
+
+function toggleCustomZone() {
+  const zone = document.getElementById("zone").value;
+  const customInput = document.getElementById("customZone");
+
+  if (zone === "Others") {
+    customInput.style.display = "inline-block";
+  } else {
+    customInput.style.display = "none";
+    customInput.value = "";
+  }
+}
+
+function addItem() {
+  const name = document.getElementById("name").value;
+  let zone = document.getElementById("zone").value;
+  const customZone = document.getElementById("customZone").value;
+
+  const unit = document.getElementById("unit").value;
+  const power = parseFloat(document.getElementById("power").value);
+  const qty = parseInt(document.getElementById("qty").value);
+
+  if (zone === "Others") {
+    if (!customZone) {
+      alert("Please enter custom zone name");
+      return;
+    }
+    zone = customZone;
+  }
+
+  if (!name || !power || !qty) {
+    alert("Please fill all fields");
+    return;
+  }
+
+  items.push({ name, zone, unit, power, qty });
+
+  renderList();
+  calculate();
+
+  document.getElementById("name").value = "";
+  document.getElementById("power").value = "";
+  document.getElementById("qty").value = 1;
+  document.getElementById("customZone").value = "";
+}
+
+function renderList() {
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+
+  items.forEach((item, index) => {
+    let ampPerUnit = item.unit === "amp"
+      ? item.power
+      : item.power / 220;
+
+    const itemAmp = ampPerUnit * item.qty;
+
+    const li = document.createElement("li");
+
+    li.innerHTML = `
+      [${item.zone}] ${item.name} x ${item.qty} = ${itemAmp.toFixed(2)}A
+      <button onclick="editItem(${index})">Edit</button>
+      <button onclick="deleteItem(${index})">Delete</button>
+    `;
+
+    list.appendChild(li);
+  });
+}
+
+function deleteItem(index) {
+  items.splice(index, 1);
+  renderList();
+  calculate();
+}
+
+function editItem(index) {
+  const item = items[index];
+
+  document.getElementById("name").value = item.name;
+  document.getElementById("zone").value = item.zone;
+  document.getElementById("unit").value = item.unit;
+  document.getElementById("power").value = item.power;
+  document.getElementById("qty").value = item.qty;
+
+  items.splice(index, 1);
+
+  renderList();
+  calculate();
+}
+
+function calculate() {
+  const mode = parseFloat(document.getElementById("mode").value);
+  const threePhaseCapacity = 189;
+
+  let zoneTotals = {};
+
+  items.forEach(item => {
+    let ampPerUnit = item.unit === "amp"
+      ? item.power
+      : item.power / 220;
+
+    const itemAmp = ampPerUnit * item.qty;
+
+    if (!zoneTotals[item.zone]) {
+      zoneTotals[item.zone] = 0;
+    }
+
+    zoneTotals[item.zone] += itemAmp;
+  });
+
+  let totalAmp = 0;
+  let total3Phase = 0;
+  let zoneHTML = "";
+
+  for (let zone in zoneTotals) {
+    const rawAmp = zoneTotals[zone];
+    const adjusted = rawAmp * mode;
+    const required = Math.ceil(adjusted / threePhaseCapacity);
+
+    totalAmp += rawAmp;
+    total3Phase += required;
+
+    zoneHTML += `
+      <p>
+        <strong>${zone}</strong>: ${rawAmp.toFixed(2)}A → 
+        ${required} x 3-Phase
+      </p>
+    `;
+  }
+
+  document.getElementById("zoneResults").innerHTML = zoneHTML;
+
+  const adjustedTotal = totalAmp * mode;
+
+  document.getElementById("total").innerText =
+    `Total Load: ${totalAmp.toFixed(2)}A (Adjusted: ${adjustedTotal.toFixed(2)}A)`;
+
+  document.getElementById("phase").innerText =
+    `Total Required: ${total3Phase} x 3-Phase`;
+
+  let warningText = "";
+
+  if (total3Phase >= 2) {
+    warningText += "⚠️ Multi-source power required\n";
+  }
+
+  if (adjustedTotal > 300) {
+    warningText += "⚠️ VERY HIGH LOAD — check distribution\n";
+  }
+
+  document.getElementById("warning").innerText = warningText;
+}
+</script>
+
+</body>
+</html>
